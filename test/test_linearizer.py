@@ -458,7 +458,7 @@ class TestLinearizer(unittest.TestCase):
     k = helper_linearizer_opt(r, [[Opt(OptOps.UNROLL, 0, 4)]], apply_tc=True, atol=3e-2, rtol=1e-3)[-1]
     for u in get_program(k.get_optimized_ast(), k.opts).uops:
       if u.op is Ops.WMMA:
-        assert u.src[-1].src[0].op != Ops.ASSIGN
+        assert u.src[-1].src[0].op != Ops.STORE
 
   @unittest.skipUnless(Device[Device.DEFAULT].renderer.tensor_cores, "test requires tensor cores")
   @unittest.skipIf(Device.DEFAULT in {"CPU", "LLVM"}, "CPU does not support using a different type for accumulation")
@@ -470,12 +470,12 @@ class TestLinearizer(unittest.TestCase):
     for u in get_program(k.get_optimized_ast(), k.opts).uops:
       if u.op is Ops.WMMA:
         #assert u.src[-1].dtype == dtypes.float.vec(prod(tc.thread_local_sizes[2]))
-        assert u.src[-1].src[0].op != Ops.ASSIGN
+        assert u.src[-1].src[0].op != Ops.STORE
 
   @unittest.skipUnless(Device[Device.DEFAULT].renderer.tensor_cores, "test requires tensor cores")
   @unittest.skipIf(Device.DEFAULT in {"CPU", "LLVM"}, "CPU does not support using a different type for accumulation")
   def test_tensor_cores_unroll_casted_phi_with_children(self):
-    # all ASSIGN children are outside the loop
+    # all STORE children are outside the loop
     tc = [tc for tc in Device[Device.DEFAULT].renderer.tensor_cores if tc.dtype_in != tc.dtype_out][0]
     x, y = Tensor.rand(128, 128, dtype=tc.dtype_in), Tensor.rand(128, 128, dtype=tc.dtype_in)
     r = x.matmul(y, dtype=tc.dtype_out).relu()
@@ -483,7 +483,7 @@ class TestLinearizer(unittest.TestCase):
     for u in get_program(k.get_optimized_ast(), k.opts).uops:
       if u.op is Ops.WMMA:
         #assert u.src[-1].dtype == dtypes.float.vec(prod(tc.thread_local_sizes[2]))
-        assert u.src[-1].src[0].op != Ops.ASSIGN
+        assert u.src[-1].src[0].op != Ops.STORE
 
   @unittest.skipUnless(Device[Device.DEFAULT].renderer.supports_float4, "test requires float4")
   def test_simple_unroll_no_between_phi_dependencies(self):
@@ -493,10 +493,10 @@ class TestLinearizer(unittest.TestCase):
     # the uops graph is RANGE -> DEFINE_ACC -> 4x ALU -> 4x ASSIGN -> ENDRANGE
     uops = get_program(k.get_optimized_ast(), k.opts).uops
     for u in uops:
-      if u.op is Ops.ASSIGN:
+      if u.op is Ops.STORE:
         assert u.src[1].op in GroupOp.ALU
-      # children of ASSIGN are placed after ENDRANGE
-      if any(x.op is Ops.ASSIGN for x in u.src):
+      # children of STORE are placed after ENDRANGE
+      if any(x.op is Ops.STORE for x in u.src):
         end_range = [i for i, x in enumerate(uops) if x.op is Ops.ENDRANGE][0]
         assert end_range < uops.index(u)
 
@@ -621,7 +621,7 @@ class TestLinearizer(unittest.TestCase):
       if if_op:=next((u for u in uops if u.op is Ops.IF), None):
         uops = uops[:uops.index(if_op)]
       assert len(set([u.op for u in uops if u.op in {Ops.RANGE, Ops.SPECIAL}])) == 1, "has either specials or ranges, not both"
-      assert len([u for u in uops if u.op is Ops.ASSIGN]) == 0, "ASSIGN should have been simplified"
+      assert len([u for u in uops if u.op is Ops.STORE]) == 0, "STORE should have been simplified"
       # TODO: once uops track min/max this will be fixed
       #assert len([u for u in uops if u.op is Ops.MAX]) <= max_ops, "no unnecessary MAX ops"
 
