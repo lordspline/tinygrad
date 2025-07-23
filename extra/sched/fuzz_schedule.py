@@ -32,7 +32,7 @@ def fuzz_schedule(outs:List[UOp]):
   for lsi in ts:
     for out in lsi.outputs:
       # freeze assign state before exec
-      if out.op is Ops.ASSIGN:
+      if out.op is Ops.STORE:
         prerealized[out] = out.buffer.as_buffer()
         assign_targets[out.srcs[1]] = out
     for x in lsi.inputs:
@@ -51,10 +51,10 @@ def fuzz_schedule(outs:List[UOp]):
       for out in lsi.outputs:
         base = rawbufs[lsi.inputs[0]].base if out.op is Ops.BUFFER_VIEW else None
         rawbufs[out] = Buffer(out.buffer.device, out.buffer.size, out.buffer.dtype, base=base)
-        if out.op is Ops.ASSIGN: rawbufs[out].ensure_allocated().copyin(prerealized[out])
+        if out.op is Ops.STORE: rawbufs[out].ensure_allocated().copyin(prerealized[out])
       for x in lsi.inputs:
         if x not in rawbufs:
-          # override the assign_target after ASSIGN
+          # override the assign_target after STORE
           if x in assign_targets and assign_targets[x] in rawbufs: rawbufs[x] = rawbufs[assign_targets[x]]
           elif x.device == "NPY": rawbufs[x] = x.buffer
           # copy the pre realized input
