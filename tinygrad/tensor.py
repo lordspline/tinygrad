@@ -1309,9 +1309,27 @@ class Tensor(MathTrait):
     dim = self._resolve_dim(dim)
     for arg in args: assert arg.ndim==self.ndim and all(ti==ai for i,(ti,ai) in enumerate(zip(self.shape, arg.shape)) if i!=dim)
     tensors = [self, *args]
-    dim_cumsum = list(itertools.accumulate([t.shape[dim] for t in tensors], initial=0))
-    for i,t in enumerate(tensors): tensors[i] = t.pad([(dim_cumsum[i], dim_cumsum[-1]-dim_cumsum[i+1]) if j==dim else None for j in range(t.ndim)])
-    return functools.reduce(Tensor.add, tensors)
+
+    # Calculate output shape
+    output_shape = list(self.shape)
+    output_shape[dim] = sum(t.shape[dim] for t in tensors)
+
+    # Create output tensor - use empty to avoid initialization cost
+    result = Tensor.empty(output_shape, dtype=self.dtype, device=self.device)
+
+    # Copy each tensor to its location using slicing (loop splitting)
+    offset = 0
+    for t in tensors:
+      # Create slice indices for the current tensor's position
+      indices = [slice(None)] * self.ndim
+      indices[dim] = slice(offset, offset + t.shape[dim])
+
+      # Use setitem to copy tensor to the correct location
+      # This creates separate simple copy kernels instead of complex pad+add
+      result[tuple(indices)] = t
+      offset += t.shape[dim]
+
+    return result
 
   def stack(self:Tensor, *args:Tensor, dim:int=0) -> Tensor:
     """
